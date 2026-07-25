@@ -92,6 +92,7 @@ extern bool AdaptiveBitrateEnabled;
 #define ML_FF_SESSION_ID_V1 0x02 // Client supports X-SS-Ping-Payload and X-SS-Connect-Data
 #define ML_FF_CLIPBOARD_SYNC 0x04 // Client supports bidirectional UTF-8 clipboard sync
 #define ML_FF_ADAPTIVE_BITRATE 0x08 // Client can request live bitrate/resolution changes
+#define ML_FF_LIVE_DISPLAY_SWITCH 0x10 // Client supports live host display enumeration and switching
 
 #define UDP_RECV_POLL_TIMEOUT_MS 100
 

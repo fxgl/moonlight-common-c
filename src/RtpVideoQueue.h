@@ -29,6 +29,8 @@ typedef struct _RTP_VIDEO_QUEUE_STATS {
     atomic_uint packetCountOOS;
     atomic_uint packetCountInvalid;
     atomic_uint packetCountFecInvalid;
+    atomic_ullong receivedBytes;
+    atomic_ullong packetCountReceived;
 } RTP_VIDEO_QUEUE_STATS, *PRTP_VIDEO_QUEUE_STATS;
 
 typedef struct _RTP_VIDEO_QUEUE {

@@ -98,6 +98,10 @@ typedef struct _QUEUED_ASYNC_CALLBACK {
             unsigned int length;
             char text[1];
         } clipboard;
+        struct {
+            unsigned int length;
+            char payload[1];
+        } displayList;
     } data;
     LINKED_BLOCKING_QUEUE_ENTRY entry;
 } QUEUED_ASYNC_CALLBACK, *PQUEUED_ASYNC_CALLBACK;
@@ -159,8 +163,10 @@ static PPLT_CRYPTO_CONTEXT decryptionCtx;
 #define IDX_SET_RGB_LED 11
 #define IDX_DS_ADAPTIVE_TRIGGERS 12
 #define IDX_CLIPBOARD_TEXT 13
+#define IDX_HOST_DISPLAY_LIST 14
 
 #define MAX_CLIPBOARD_TEXT_SIZE (60 * 1024)
+#define MAX_HOST_DISPLAY_LIST_SIZE (16 * 1024)
 
 #define CONTROL_STREAM_TIMEOUT_SEC 10
 #define CONTROL_STREAM_LINGER_TIMEOUT_SEC 2
@@ -180,6 +186,7 @@ static const short packetTypesGen3[] = {
     -1,     // Set RGB LED (unused)
     -1,     // Set Adaptive Triggers (unused)
     -1,     // Clipboard text (unused)
+    -1,     // Host display list (unused)
 };
 static const short packetTypesGen4[] = {
     0x0606, // Request IDR frame
@@ -196,6 +203,7 @@ static const short packetTypesGen4[] = {
     -1,     // Set RGB LED (unused)
     -1,     // Set Adaptive Triggers (unused)
     -1,     // Clipboard text (unused)
+    -1,     // Host display list (unused)
 };
 static const short packetTypesGen5[] = {
     0x0305, // Start A
@@ -212,6 +220,7 @@ static const short packetTypesGen5[] = {
     -1,     // Set RGB LED (unused)
     -1,     // Set Adaptive Triggers (unused)
     -1,     // Clipboard text (unused)
+    -1,     // Host display list (unused)
 };
 static const short packetTypesGen7[] = {
     0x0305, // Start A
@@ -228,6 +237,7 @@ static const short packetTypesGen7[] = {
     -1,     // Set RGB LED (unused)
     -1,     // Set Adaptive Triggers (unused)
     -1,     // Clipboard text (unused)
+    -1,     // Host display list (unused)
 };
 static const short packetTypesGen7Enc[] = {
     0x0302, // Request IDR frame
@@ -244,6 +254,7 @@ static const short packetTypesGen7Enc[] = {
     0x5502, // Set RGB LED (Sunshine protocol extension)
     0x5503, // Set Adaptive Triggers (Sunshine protocol extension)
     0x5504, // Clipboard text (Sunshine protocol extension)
+    0x5506, // Host display list (Sunshine protocol extension)
 };
 
 static const char requestIdrFrameGen3[] = { 0, 0 };
@@ -581,6 +592,35 @@ int LiRequestAdaptiveStreamConfig(int width, int height, int bitrateKbps) {
     }
 
     return 0;
+}
+
+int LiRequestHostDisplayList(void) {
+    if (!(SunshineFeatureFlags & LI_FF_LIVE_DISPLAY_SWITCH)) {
+        return LI_ERR_UNSUPPORTED;
+    }
+
+    return sendMessageAndForget(SS_HOST_DISPLAY_LIST_PTYPE,
+                                0,
+                                NULL,
+                                CTRL_CHANNEL_GENERIC,
+                                ENET_PACKET_FLAG_RELIABLE,
+                                false) ? 0 : -1;
+}
+
+int LiRequestHostDisplaySwitch(unsigned short displayIndex) {
+    uint16_t index;
+
+    if (!(SunshineFeatureFlags & LI_FF_LIVE_DISPLAY_SWITCH)) {
+        return LI_ERR_UNSUPPORTED;
+    }
+
+    index = LE16(displayIndex);
+    return sendMessageAndForget(SS_HOST_DISPLAY_SWITCH_PTYPE,
+                                sizeof(index),
+                                &index,
+                                CTRL_CHANNEL_GENERIC,
+                                ENET_PACKET_FLAG_RELIABLE,
+                                false) ? 0 : -1;
 }
 
 // Reads an NV control stream packet from the TCP connection
@@ -1241,6 +1281,10 @@ static void asyncCallbackThreadFunc(void* context) {
             ListenerCallbacks.setClipboardText(queuedCb->data.clipboard.text,
                                                queuedCb->data.clipboard.length);
             break;
+        case IDX_HOST_DISPLAY_LIST:
+            ListenerCallbacks.setHostDisplayList(queuedCb->data.displayList.payload,
+                                                 queuedCb->data.displayList.length);
+            break;
         default:
             // Unhandled packet type from queueAsyncCallback()
             LC_ASSERT(false);
@@ -1258,7 +1302,8 @@ static bool needsAsyncCallback(unsigned short packetType) {
            packetType == packetTypes[IDX_SET_RGB_LED] ||
            packetType == packetTypes[IDX_HDR_INFO] ||
            packetType == packetTypes[IDX_DS_ADAPTIVE_TRIGGERS] ||
-           packetType == packetTypes[IDX_CLIPBOARD_TEXT];
+           packetType == packetTypes[IDX_CLIPBOARD_TEXT] ||
+           packetType == packetTypes[IDX_HOST_DISPLAY_LIST];
 }
 
 static void queueAsyncCallback(PNVCTL_ENET_PACKET_HEADER_V1 ctlHdr, int packetLength) {
@@ -1274,9 +1319,17 @@ static void queueAsyncCallback(PNVCTL_ENET_PACKET_HEADER_V1 ctlHdr, int packetLe
         Limelog("Discarding invalid clipboard message length: %d\n", packetLength);
         return;
     }
+    if (ctlHdr->type == packetTypes[IDX_HOST_DISPLAY_LIST] &&
+            (packetLength < (int)sizeof(*ctlHdr) ||
+             packetLength - sizeof(*ctlHdr) > MAX_HOST_DISPLAY_LIST_SIZE)) {
+        Limelog("Discarding invalid host display list length: %d\n", packetLength);
+        return;
+    }
 
     queuedCb = malloc(sizeof(*queuedCb) +
                       (ctlHdr->type == packetTypes[IDX_CLIPBOARD_TEXT] ?
+                       packetLength - sizeof(*ctlHdr) :
+                       ctlHdr->type == packetTypes[IDX_HOST_DISPLAY_LIST] ?
                        packetLength - sizeof(*ctlHdr) : 0));
     if (!queuedCb) {
         return;
@@ -1332,6 +1385,11 @@ static void queueAsyncCallback(PNVCTL_ENET_PACKET_HEADER_V1 ctlHdr, int packetLe
         queuedCb->data.clipboard.length = packetLength - sizeof(*ctlHdr);
         BbGetBytes(&bb, (uint8_t*)queuedCb->data.clipboard.text, queuedCb->data.clipboard.length);
         queuedCb->typeIndex = IDX_CLIPBOARD_TEXT;
+    }
+    else if (ctlHdr->type == packetTypes[IDX_HOST_DISPLAY_LIST]) {
+        queuedCb->data.displayList.length = packetLength - sizeof(*ctlHdr);
+        BbGetBytes(&bb, (uint8_t*)queuedCb->data.displayList.payload, queuedCb->data.displayList.length);
+        queuedCb->typeIndex = IDX_HOST_DISPLAY_LIST;
     }
     else {
         // Unhandled packet type from needsAsyncCallback()

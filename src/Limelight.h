@@ -492,6 +492,11 @@ typedef void(*ConnListenerSetControllerLED)(uint16_t controllerNumber, uint8_t r
 // The text pointer is valid only for the duration of the callback.
 typedef void(*ConnListenerSetClipboardText)(const char* text, unsigned int length);
 
+// This callback is invoked with a Sunshine display-list payload. The payload
+// begins with little-endian current-display and display-count fields, followed
+// by little-endian length-prefixed UTF-8 display names.
+typedef void(*ConnListenerSetHostDisplayList)(const char* payload, unsigned int length);
+
 typedef struct _CONNECTION_LISTENER_CALLBACKS {
     ConnListenerStageStarting stageStarting;
     ConnListenerStageComplete stageComplete;
@@ -507,6 +512,7 @@ typedef struct _CONNECTION_LISTENER_CALLBACKS {
     ConnListenerSetControllerLED setControllerLED;
     ConnListenerSetAdaptiveTriggers setAdaptiveTriggers;
     ConnListenerSetClipboardText setClipboardText;
+    ConnListenerSetHostDisplayList setHostDisplayList;
 } CONNECTION_LISTENER_CALLBACKS, *PCONNECTION_LISTENER_CALLBACKS;
 
 // Use this function to zero the connection callbacks when allocated on the stack or heap
@@ -747,6 +753,12 @@ void LiSetAdaptiveBitrateEnabled(bool enabled);
 // All values must be positive and no greater than the original stream configuration.
 int LiRequestAdaptiveStreamConfig(int width, int height, int bitrateKbps);
 
+// Requests the current host display list or switches capture to an entry in it.
+// These are Sunshine protocol extensions and return LI_ERR_UNSUPPORTED when the
+// host does not advertise live display switching.
+int LiRequestHostDisplayList(void);
+int LiRequestHostDisplaySwitch(unsigned short displayIndex);
+
 // Button flags
 #define A_FLAG     0x1000
 #define B_FLAG     0x2000
@@ -934,6 +946,8 @@ typedef struct _RTP_VIDEO_STATS {
     uint32_t packetCountOOS;           // out-of-sequence packets
     uint32_t packetCountInvalid;       // corrupted packets, etc
     uint32_t packetCountFecInvalid;    // invalid FEC packet
+    uint64_t receivedBytes;            // accepted RTP video bytes
+    uint64_t packetCountReceived;      // accepted RTP video and FEC packets
 } RTP_VIDEO_STATS, *PRTP_VIDEO_STATS;
 
 void LiGetRTPVideoStats(PRTP_VIDEO_STATS stats);
@@ -1046,6 +1060,7 @@ void LiRequestIdrFrame(void);
 #define LI_FF_CONTROLLER_TOUCH_EVENTS 0x02 // LiSendControllerTouchEvent() supported
 #define LI_FF_CLIPBOARD_SYNC          0x04 // Bidirectional UTF-8 clipboard sync supported
 #define LI_FF_ADAPTIVE_BITRATE        0x08 // Live bitrate and resolution changes supported
+#define LI_FF_LIVE_DISPLAY_SWITCH     0x10 // Live host display enumeration and switching supported
 uint32_t LiGetHostFeatureFlags(void);
 
 #ifdef __cplusplus

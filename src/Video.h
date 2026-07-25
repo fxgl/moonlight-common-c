@@ -71,6 +71,8 @@ typedef struct _SS_FRAME_FEC_STATUS {
 
 // Fields are little-endian
 #define SS_ADAPTIVE_STREAM_CONFIG_PTYPE 0x5505
+#define SS_HOST_DISPLAY_LIST_PTYPE 0x5506
+#define SS_HOST_DISPLAY_SWITCH_PTYPE 0x5507
 typedef struct _SS_ADAPTIVE_STREAM_CONFIG {
     uint32_t bitrateKbps;
     uint16_t width;

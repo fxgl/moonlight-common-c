@@ -232,6 +232,8 @@ static void VideoReceiveThreadProc(void* context) {
         queueStatus = RtpvAddPacket(&rtpQueue, packet, err, (PRTPV_QUEUE_ENTRY)&buffer[decryptedSize]);
 
         if (queueStatus == RTPF_RET_QUEUED) {
+            atomic_fetch_add_explicit(&rtpQueue.stats.receivedBytes, (unsigned long long)err, memory_order_relaxed);
+            atomic_fetch_add_explicit(&rtpQueue.stats.packetCountReceived, 1, memory_order_relaxed);
             // The queue owns the buffer
             buffer = NULL;
         }

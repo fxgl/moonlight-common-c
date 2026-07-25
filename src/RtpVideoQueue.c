@@ -821,5 +821,7 @@ void RtpvGetStats(PRTP_VIDEO_QUEUE queue, PRTP_VIDEO_STATS stats) {
     stats->packetCountOOS = atomic_load_explicit(&queue->stats.packetCountOOS, memory_order_relaxed);
     stats->packetCountInvalid = atomic_load_explicit(&queue->stats.packetCountInvalid, memory_order_relaxed);
     stats->packetCountFecInvalid = atomic_load_explicit(&queue->stats.packetCountFecInvalid, memory_order_relaxed);
+    stats->receivedBytes = atomic_load_explicit(&queue->stats.receivedBytes, memory_order_relaxed);
+    stats->packetCountReceived = atomic_load_explicit(&queue->stats.packetCountReceived, memory_order_relaxed);
 }
 
