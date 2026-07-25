@@ -335,7 +335,11 @@ static int reconstructFrame(PRTP_VIDEO_QUEUE queue) {
     // If this fails, something is probably wrong with our FEC state.
     LC_ASSERT(ret == 0);
 
-    if (queue->bufferDataPackets != queue->receivedDataPackets) {
+    if (ret == 0 && queue->bufferDataPackets != queue->receivedDataPackets) {
+        atomic_fetch_add_explicit(&queue->stats.packetCountFecRecovered,
+                                  queue->bufferDataPackets - queue->receivedDataPackets,
+                                  memory_order_relaxed);
+
 #ifdef FEC_VERBOSE
         Limelog("Recovered %d video data shards from frame %d\n",
                 queue->bufferDataPackets - queue->receivedDataPackets,
