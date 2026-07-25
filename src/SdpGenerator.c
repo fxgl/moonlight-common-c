@@ -2,9 +2,14 @@
 #include <inttypes.h>
 
 bool ClipboardSyncEnabled;
+bool AdaptiveBitrateEnabled;
 
 void LiSetClipboardSyncEnabled(bool enabled) {
     ClipboardSyncEnabled = enabled;
+}
+
+void LiSetAdaptiveBitrateEnabled(bool enabled) {
+    AdaptiveBitrateEnabled = enabled;
 }
 
 #define MAX_OPTION_NAME_LEN 128
@@ -279,6 +284,9 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
         if (ClipboardSyncEnabled) {
             moonlightFeatureFlags |= ML_FF_CLIPBOARD_SYNC;
         }
+        if (AdaptiveBitrateEnabled) {
+            moonlightFeatureFlags |= ML_FF_ADAPTIVE_BITRATE;
+        }
         snprintf(payloadStr, sizeof(payloadStr), "%" PRIu32, moonlightFeatureFlags);
         err |= addAttributeString(&optionHead, "x-ml-general.featureFlags", payloadStr);
 
@@ -370,16 +378,24 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
     // ourselves so initialBitrateKbps does not exceed maximumBitrateKbps.
     adjustedBitrate = adjustedBitrate > 100000 ? 100000 : adjustedBitrate;
 
-    // We don't support dynamic bitrate scaling properly (it tends to bounce between min and max and never
-    // settle on the optimal bitrate if it's somewhere in the middle), so we'll just latch the bitrate
-    // to the requested value.
+    // With adaptive quality enabled, the selected bitrate is an upper bound. Legacy
+    // GameStream hosts use the advertised range for their own congestion control.
+    // Sunshine receives explicit live quality requests over the control channel.
     if (AppVersionQuad[0] >= 5) {
         snprintf(payloadStr, sizeof(payloadStr), "%d", adjustedBitrate);
 
         err |= addAttributeString(&optionHead, "x-nv-video[0].initialBitrateKbps", payloadStr);
         err |= addAttributeString(&optionHead, "x-nv-video[0].initialPeakBitrateKbps", payloadStr);
 
+        if (AdaptiveBitrateEnabled) {
+            int minimumBitrate = adjustedBitrate / 10;
+            minimumBitrate = minimumBitrate < 500 ? 500 : minimumBitrate;
+            minimumBitrate = minimumBitrate > adjustedBitrate ? adjustedBitrate : minimumBitrate;
+            snprintf(payloadStr, sizeof(payloadStr), "%d", minimumBitrate);
+        }
         err |= addAttributeString(&optionHead, "x-nv-vqos[0].bw.minimumBitrateKbps", payloadStr);
+
+        snprintf(payloadStr, sizeof(payloadStr), "%d", adjustedBitrate);
         err |= addAttributeString(&optionHead, "x-nv-vqos[0].bw.maximumBitrateKbps", payloadStr);
 
         // Send the configured bitrate to Sunshine hosts, so they can adjust for dynamic FEC percentage

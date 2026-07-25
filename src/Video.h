@@ -70,6 +70,14 @@ typedef struct _SS_FRAME_FEC_STATUS {
 } SS_FRAME_FEC_STATUS, *PSS_FRAME_FEC_STATUS;
 
 // Fields are little-endian
+#define SS_ADAPTIVE_STREAM_CONFIG_PTYPE 0x5505
+typedef struct _SS_ADAPTIVE_STREAM_CONFIG {
+    uint32_t bitrateKbps;
+    uint16_t width;
+    uint16_t height;
+} SS_ADAPTIVE_STREAM_CONFIG, *PSS_ADAPTIVE_STREAM_CONFIG;
+
+// Fields are little-endian
 #define SS_LTR_FRAME_ACK_PTYPE 0x0350
 typedef struct _SS_LTR_FRAME_ACK {
     uint32_t frameIndex;

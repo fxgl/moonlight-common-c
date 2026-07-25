@@ -54,6 +54,7 @@ extern uint32_t EncryptionFeaturesSupported;
 extern uint32_t EncryptionFeaturesRequested;
 extern uint32_t EncryptionFeaturesEnabled;
 extern bool ClipboardSyncEnabled;
+extern bool AdaptiveBitrateEnabled;
 
 // ENet channel ID values
 #define CTRL_CHANNEL_GENERIC      0x00
@@ -90,6 +91,7 @@ extern bool ClipboardSyncEnabled;
 #define ML_FF_FEC_STATUS 0x01 // Client sends SS_FRAME_FEC_STATUS for frame losses
 #define ML_FF_SESSION_ID_V1 0x02 // Client supports X-SS-Ping-Payload and X-SS-Connect-Data
 #define ML_FF_CLIPBOARD_SYNC 0x04 // Client supports bidirectional UTF-8 clipboard sync
+#define ML_FF_ADAPTIVE_BITRATE 0x08 // Client can request live bitrate/resolution changes
 
 #define UDP_RECV_POLL_TIMEOUT_MS 100
 

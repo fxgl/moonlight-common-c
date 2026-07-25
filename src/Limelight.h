@@ -453,9 +453,10 @@ typedef void(*ConnListenerLogMessage)(const char* format, ...);
 // physically present, so your callback should handle this possibility.
 typedef void(*ConnListenerRumble)(unsigned short controllerNumber, unsigned short lowFreqMotor, unsigned short highFreqMotor);
 
-// This callback is used to notify the client of a connection status change.
-// Consider displaying an overlay for the user to notify them why their stream
-// is not performing as expected.
+// This callback reports the sampled connection status. The same status may be
+// reported repeatedly while it persists, allowing clients to implement gradual
+// quality adaptation. Consider displaying an overlay for the user to notify them
+// why their stream is not performing as expected.
 #define CONN_STATUS_OKAY    0
 #define CONN_STATUS_POOR    1
 typedef void(*ConnListenerConnectionStatusUpdate)(int connectionStatus);
@@ -737,6 +738,14 @@ int LiSendClipboardFocusEvent(bool focused);
 // Enables or disables advertising clipboard synchronization to Sunshine for the next connection.
 // Clipboard synchronization is disabled by default.
 void LiSetClipboardSyncEnabled(bool enabled);
+
+// Enables or disables adaptive bitrate and resolution requests for the next connection.
+// When enabled, StreamConfig.bitrate, width, and height are treated as upper limits.
+void LiSetAdaptiveBitrateEnabled(bool enabled);
+
+// Requests a live stream quality change from a compatible Sunshine host.
+// All values must be positive and no greater than the original stream configuration.
+int LiRequestAdaptiveStreamConfig(int width, int height, int bitrateKbps);
 
 // Button flags
 #define A_FLAG     0x1000
@@ -1036,6 +1045,7 @@ void LiRequestIdrFrame(void);
 #define LI_FF_PEN_TOUCH_EVENTS        0x01 // LiSendTouchEvent()/LiSendPenEvent() supported
 #define LI_FF_CONTROLLER_TOUCH_EVENTS 0x02 // LiSendControllerTouchEvent() supported
 #define LI_FF_CLIPBOARD_SYNC          0x04 // Bidirectional UTF-8 clipboard sync supported
+#define LI_FF_ADAPTIVE_BITRATE        0x08 // Live bitrate and resolution changes supported
 uint32_t LiGetHostFeatureFlags(void);
 
 #ifdef __cplusplus

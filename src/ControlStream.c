@@ -126,7 +126,6 @@ static int intervalGoodFrameCount;
 static int intervalTotalFrameCount;
 static uint64_t intervalStartTimeMs;
 static int lastIntervalLossPercentage;
-static int lastConnectionStatusUpdate;
 static uint32_t currentEnetSequenceNumber;
 static uint64_t firstFrameTimeMs;
 
@@ -325,6 +324,9 @@ static short* payloadLengths;
 static char**preconstructedPayloads;
 static bool supportsIdrFrameRequest;
 
+static bool sendMessageAndForget(short ptype, unsigned int paylen, const void* payload,
+                                 uint8_t channelId, uint32_t flags, bool moreData);
+
 #define LOSS_REPORT_INTERVAL_MS 50
 #define PERIODIC_PING_INTERVAL_MS 100
 
@@ -383,7 +385,6 @@ int initializeControlStream(void) {
     intervalTotalFrameCount = 0;
     intervalStartTimeMs = 0;
     lastIntervalLossPercentage = 0;
-    lastConnectionStatusUpdate = CONN_STATUS_OKAY;
     firstFrameTimeMs = 0;
     currentEnetSequenceNumber = 0;
     usePeriodicPing = APP_VERSION_AT_LEAST(7, 1, 415);
@@ -532,17 +533,14 @@ void connectionSawFrame(uint32_t frameIndex) {
         if (intervalTotalFrameCount != 0) {
             // Notify the client of connection status changes based on frame loss rate
             int frameLossPercent = 100 - (intervalGoodFrameCount * 100) / intervalTotalFrameCount;
-            if (lastConnectionStatusUpdate != CONN_STATUS_POOR &&
-                    (frameLossPercent >= CONN_IMMEDIATE_POOR_LOSS_RATE ||
-                     (frameLossPercent >= CONN_CONSECUTIVE_POOR_LOSS_RATE && lastIntervalLossPercentage >= CONN_CONSECUTIVE_POOR_LOSS_RATE))) {
+            if (frameLossPercent >= CONN_IMMEDIATE_POOR_LOSS_RATE ||
+                    (frameLossPercent >= CONN_CONSECUTIVE_POOR_LOSS_RATE && lastIntervalLossPercentage >= CONN_CONSECUTIVE_POOR_LOSS_RATE)) {
                 // We require 2 consecutive intervals above CONN_CONSECUTIVE_POOR_LOSS_RATE or a single
                 // interval above CONN_IMMEDIATE_POOR_LOSS_RATE to notify of a poor connection.
                 ListenerCallbacks.connectionStatusUpdate(CONN_STATUS_POOR);
-                lastConnectionStatusUpdate = CONN_STATUS_POOR;
             }
-            else if (frameLossPercent <= CONN_OKAY_LOSS_RATE && lastConnectionStatusUpdate != CONN_STATUS_OKAY) {
+            else if (frameLossPercent <= CONN_OKAY_LOSS_RATE) {
                 ListenerCallbacks.connectionStatusUpdate(CONN_STATUS_OKAY);
-                lastConnectionStatusUpdate = CONN_STATUS_OKAY;
             }
 
             lastIntervalLossPercentage = frameLossPercent;
@@ -555,6 +553,34 @@ void connectionSawFrame(uint32_t frameIndex) {
 
     intervalTotalFrameCount += frameIndex - lastSeenFrame;
     lastSeenFrame = frameIndex;
+}
+
+int LiRequestAdaptiveStreamConfig(int width, int height, int bitrateKbps) {
+    SS_ADAPTIVE_STREAM_CONFIG config;
+
+    if (!AdaptiveBitrateEnabled || !(SunshineFeatureFlags & LI_FF_ADAPTIVE_BITRATE)) {
+        return LI_ERR_UNSUPPORTED;
+    }
+    if (width <= 0 || height <= 0 || bitrateKbps <= 0 ||
+            width > StreamConfig.width || height > StreamConfig.height ||
+            bitrateKbps > StreamConfig.bitrate || width > UINT16_MAX || height > UINT16_MAX) {
+        return -1;
+    }
+
+    config.bitrateKbps = LE32((uint32_t)bitrateKbps);
+    config.width = LE16((uint16_t)width);
+    config.height = LE16((uint16_t)height);
+
+    if (!sendMessageAndForget(SS_ADAPTIVE_STREAM_CONFIG_PTYPE,
+                              sizeof(config),
+                              &config,
+                              CTRL_CHANNEL_GENERIC,
+                              ENET_PACKET_FLAG_RELIABLE,
+                              false)) {
+        return -1;
+    }
+
+    return 0;
 }
 
 // Reads an NV control stream packet from the TCP connection
