@@ -76,6 +76,7 @@ typedef struct _PACKET_HOLDER {
         SS_CONTROLLER_TOUCH_PACKET controllerTouch;
         SS_CONTROLLER_MOTION_PACKET controllerMotion;
         SS_CONTROLLER_BATTERY_PACKET controllerBattery;
+        SS_CLIPBOARD_FOCUS_PACKET clipboardFocus;
         NV_UNICODE_PACKET unicode;
     } packet;
 } PACKET_HOLDER, *PPACKET_HOLDER;
@@ -1061,6 +1062,73 @@ int LiSendUtf8TextEvent(const char *text, unsigned int length) {
     holder->packet.unicode.header.size = BE32(sizeof(uint32_t) + length);
     holder->packet.unicode.header.magic = LE32(UTF8_TEXT_EVENT_MAGIC);
     memcpy(holder->packet.unicode.text, text, length);
+
+    err = LbqOfferQueueItem(&packetQueue, holder, &holder->entry);
+    if (err != LBQ_SUCCESS) {
+        LC_ASSERT(err == LBQ_BOUND_EXCEEDED);
+        Limelog("Input queue reached maximum size limit\n");
+        freePacketHolder(holder);
+    }
+
+    return err;
+}
+
+int LiSendClipboardTextEvent(const char *text, unsigned int length) {
+    PPACKET_HOLDER holder;
+    int err;
+
+    if (!ClipboardSyncEnabled || !(SunshineFeatureFlags & LI_FF_CLIPBOARD_SYNC)) {
+        return LI_ERR_UNSUPPORTED;
+    }
+    if (!atomic_load_explicit(&initialized, memory_order_acquire)) {
+        return -2;
+    }
+    if (text == NULL || length > 60 * 1024) {
+        return -1;
+    }
+
+    holder = allocatePacketHolder(length);
+    if (holder == NULL) {
+        return -1;
+    }
+
+    holder->channelId = CTRL_CHANNEL_CLIPBOARD;
+    holder->enetPacketFlags = ENET_PACKET_FLAG_RELIABLE;
+    holder->packet.unicode.header.size = BE32(sizeof(uint32_t) + length);
+    holder->packet.unicode.header.magic = LE32(SS_CLIPBOARD_TEXT_EVENT_MAGIC);
+    memcpy(holder->packet.unicode.text, text, length);
+
+    err = LbqOfferQueueItem(&packetQueue, holder, &holder->entry);
+    if (err != LBQ_SUCCESS) {
+        LC_ASSERT(err == LBQ_BOUND_EXCEEDED);
+        Limelog("Input queue reached maximum size limit\n");
+        freePacketHolder(holder);
+    }
+
+    return err;
+}
+
+int LiSendClipboardFocusEvent(bool focused) {
+    PPACKET_HOLDER holder;
+    int err;
+
+    if (!ClipboardSyncEnabled || !(SunshineFeatureFlags & LI_FF_CLIPBOARD_SYNC)) {
+        return LI_ERR_UNSUPPORTED;
+    }
+    if (!atomic_load_explicit(&initialized, memory_order_acquire)) {
+        return -2;
+    }
+
+    holder = allocatePacketHolder(0);
+    if (holder == NULL) {
+        return -1;
+    }
+
+    holder->channelId = CTRL_CHANNEL_CLIPBOARD;
+    holder->enetPacketFlags = ENET_PACKET_FLAG_RELIABLE;
+    holder->packet.clipboardFocus.header.size = BE32(sizeof(uint32_t) + sizeof(uint8_t));
+    holder->packet.clipboardFocus.header.magic = LE32(SS_CLIPBOARD_FOCUS_EVENT_MAGIC);
+    holder->packet.clipboardFocus.focused = focused ? 1 : 0;
 
     err = LbqOfferQueueItem(&packetQueue, holder, &holder->entry);
     if (err != LBQ_SUCCESS) {

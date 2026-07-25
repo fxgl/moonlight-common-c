@@ -487,6 +487,10 @@ typedef void(*ConnListenerSetAdaptiveTriggers)(uint16_t controllerNumber, uint8_
 // This callback is invoked to set a controller's RGB LED (if present).
 typedef void(*ConnListenerSetControllerLED)(uint16_t controllerNumber, uint8_t r, uint8_t g, uint8_t b);
 
+// This callback is invoked when a Sunshine host publishes UTF-8 clipboard text.
+// The text pointer is valid only for the duration of the callback.
+typedef void(*ConnListenerSetClipboardText)(const char* text, unsigned int length);
+
 typedef struct _CONNECTION_LISTENER_CALLBACKS {
     ConnListenerStageStarting stageStarting;
     ConnListenerStageComplete stageComplete;
@@ -501,6 +505,7 @@ typedef struct _CONNECTION_LISTENER_CALLBACKS {
     ConnListenerSetMotionEventState setMotionEventState;
     ConnListenerSetControllerLED setControllerLED;
     ConnListenerSetAdaptiveTriggers setAdaptiveTriggers;
+    ConnListenerSetClipboardText setClipboardText;
 } CONNECTION_LISTENER_CALLBACKS, *PCONNECTION_LISTENER_CALLBACKS;
 
 // Use this function to zero the connection callbacks when allocated on the stack or heap
@@ -719,6 +724,19 @@ int LiSendKeyboardEvent2(short keyCode, char keyAction, char modifiers, char fla
 
 // This function queues an UTF-8 encoded text to be sent to the remote server.
 int LiSendUtf8TextEvent(const char *text, unsigned int length);
+
+// This function updates the Sunshine host's clipboard with up to 60 KiB of UTF-8 text.
+// It returns LI_ERR_UNSUPPORTED when the host does not advertise support.
+int LiSendClipboardTextEvent(const char *text, unsigned int length);
+
+// Notifies Sunshine that the streaming window gained or lost keyboard focus.
+// On focus gain, Sunshine snapshots its clipboard. On focus loss, it returns
+// clipboard text only when it differs from that snapshot.
+int LiSendClipboardFocusEvent(bool focused);
+
+// Enables or disables advertising clipboard synchronization to Sunshine for the next connection.
+// Clipboard synchronization is disabled by default.
+void LiSetClipboardSyncEnabled(bool enabled);
 
 // Button flags
 #define A_FLAG     0x1000
@@ -1017,6 +1035,7 @@ void LiRequestIdrFrame(void);
 // This function returns any extended feature flags supported by the host.
 #define LI_FF_PEN_TOUCH_EVENTS        0x01 // LiSendTouchEvent()/LiSendPenEvent() supported
 #define LI_FF_CONTROLLER_TOUCH_EVENTS 0x02 // LiSendControllerTouchEvent() supported
+#define LI_FF_CLIPBOARD_SYNC          0x04 // Bidirectional UTF-8 clipboard sync supported
 uint32_t LiGetHostFeatureFlags(void);
 
 #ifdef __cplusplus

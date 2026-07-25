@@ -1,6 +1,12 @@
 #include "Limelight-internal.h"
 #include <inttypes.h>
 
+bool ClipboardSyncEnabled;
+
+void LiSetClipboardSyncEnabled(bool enabled) {
+    ClipboardSyncEnabled = enabled;
+}
+
 #define MAX_OPTION_NAME_LEN 128
 
 #define MAX_SDP_HEADER_LEN 128
@@ -270,6 +276,9 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
     if (IS_SUNSHINE()) {
         // Send client feature flags to Sunshine hosts
         uint32_t moonlightFeatureFlags = ML_FF_FEC_STATUS | ML_FF_SESSION_ID_V1;
+        if (ClipboardSyncEnabled) {
+            moonlightFeatureFlags |= ML_FF_CLIPBOARD_SYNC;
+        }
         snprintf(payloadStr, sizeof(payloadStr), "%" PRIu32, moonlightFeatureFlags);
         err |= addAttributeString(&optionHead, "x-ml-general.featureFlags", payloadStr);
 

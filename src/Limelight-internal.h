@@ -53,6 +53,7 @@ extern uint32_t SunshineFeatureFlags;
 extern uint32_t EncryptionFeaturesSupported;
 extern uint32_t EncryptionFeaturesRequested;
 extern uint32_t EncryptionFeaturesEnabled;
+extern bool ClipboardSyncEnabled;
 
 // ENet channel ID values
 #define CTRL_CHANNEL_GENERIC      0x00
@@ -61,6 +62,7 @@ extern uint32_t EncryptionFeaturesEnabled;
 #define CTRL_CHANNEL_MOUSE        0x03
 #define CTRL_CHANNEL_PEN          0x04
 #define CTRL_CHANNEL_TOUCH        0x05
+#define CTRL_CHANNEL_CLIPBOARD    0x06
 #define CTRL_CHANNEL_GAMEPAD_BASE 0x10 // 0x10 to 0x1F by controller index
 #define CTRL_CHANNEL_SENSOR_BASE  0x20 // 0x20 to 0x2F by controller index
 #define CTRL_CHANNEL_COUNT        0x30
@@ -87,6 +89,7 @@ extern uint32_t EncryptionFeaturesEnabled;
 // Client feature flags for x-ml-general.featureFlags SDP attribute
 #define ML_FF_FEC_STATUS 0x01 // Client sends SS_FRAME_FEC_STATUS for frame losses
 #define ML_FF_SESSION_ID_V1 0x02 // Client supports X-SS-Ping-Payload and X-SS-Connect-Data
+#define ML_FF_CLIPBOARD_SYNC 0x04 // Client supports bidirectional UTF-8 clipboard sync
 
 #define UDP_RECV_POLL_TIMEOUT_MS 100
 

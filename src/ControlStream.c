@@ -94,6 +94,10 @@ typedef struct _QUEUED_ASYNC_CALLBACK {
             uint8_t left[DS_EFFECT_PAYLOAD_SIZE];
             uint8_t right[DS_EFFECT_PAYLOAD_SIZE];
         } dsAdaptiveTrigger;
+        struct {
+            unsigned int length;
+            char text[1];
+        } clipboard;
     } data;
     LINKED_BLOCKING_QUEUE_ENTRY entry;
 } QUEUED_ASYNC_CALLBACK, *PQUEUED_ASYNC_CALLBACK;
@@ -155,6 +159,9 @@ static PPLT_CRYPTO_CONTEXT decryptionCtx;
 #define IDX_SET_MOTION_EVENT 10
 #define IDX_SET_RGB_LED 11
 #define IDX_DS_ADAPTIVE_TRIGGERS 12
+#define IDX_CLIPBOARD_TEXT 13
+
+#define MAX_CLIPBOARD_TEXT_SIZE (60 * 1024)
 
 #define CONTROL_STREAM_TIMEOUT_SEC 10
 #define CONTROL_STREAM_LINGER_TIMEOUT_SEC 2
@@ -173,6 +180,7 @@ static const short packetTypesGen3[] = {
     -1,     // Set motion event (unused)
     -1,     // Set RGB LED (unused)
     -1,     // Set Adaptive Triggers (unused)
+    -1,     // Clipboard text (unused)
 };
 static const short packetTypesGen4[] = {
     0x0606, // Request IDR frame
@@ -188,6 +196,7 @@ static const short packetTypesGen4[] = {
     -1,     // Set motion event (unused)
     -1,     // Set RGB LED (unused)
     -1,     // Set Adaptive Triggers (unused)
+    -1,     // Clipboard text (unused)
 };
 static const short packetTypesGen5[] = {
     0x0305, // Start A
@@ -203,6 +212,7 @@ static const short packetTypesGen5[] = {
     -1,     // Set motion event (unused)
     -1,     // Set RGB LED (unused)
     -1,     // Set Adaptive Triggers (unused)
+    -1,     // Clipboard text (unused)
 };
 static const short packetTypesGen7[] = {
     0x0305, // Start A
@@ -218,6 +228,7 @@ static const short packetTypesGen7[] = {
     -1,     // Set motion event (unused)
     -1,     // Set RGB LED (unused)
     -1,     // Set Adaptive Triggers (unused)
+    -1,     // Clipboard text (unused)
 };
 static const short packetTypesGen7Enc[] = {
     0x0302, // Request IDR frame
@@ -233,6 +244,7 @@ static const short packetTypesGen7Enc[] = {
     0x5501, // Set motion event (Sunshine protocol extension)
     0x5502, // Set RGB LED (Sunshine protocol extension)
     0x5503, // Set Adaptive Triggers (Sunshine protocol extension)
+    0x5504, // Clipboard text (Sunshine protocol extension)
 };
 
 static const char requestIdrFrameGen3[] = { 0, 0 };
@@ -1199,6 +1211,10 @@ static void asyncCallbackThreadFunc(void* context) {
                                                   queuedCb->data.dsAdaptiveTrigger.left,
                                                   queuedCb->data.dsAdaptiveTrigger.right);
             break;
+        case IDX_CLIPBOARD_TEXT:
+            ListenerCallbacks.setClipboardText(queuedCb->data.clipboard.text,
+                                               queuedCb->data.clipboard.length);
+            break;
         default:
             // Unhandled packet type from queueAsyncCallback()
             LC_ASSERT(false);
@@ -1215,7 +1231,8 @@ static bool needsAsyncCallback(unsigned short packetType) {
            packetType == packetTypes[IDX_SET_MOTION_EVENT] ||
            packetType == packetTypes[IDX_SET_RGB_LED] ||
            packetType == packetTypes[IDX_HDR_INFO] ||
-           packetType == packetTypes[IDX_DS_ADAPTIVE_TRIGGERS];
+           packetType == packetTypes[IDX_DS_ADAPTIVE_TRIGGERS] ||
+           packetType == packetTypes[IDX_CLIPBOARD_TEXT];
 }
 
 static void queueAsyncCallback(PNVCTL_ENET_PACKET_HEADER_V1 ctlHdr, int packetLength) {
@@ -1225,7 +1242,16 @@ static void queueAsyncCallback(PNVCTL_ENET_PACKET_HEADER_V1 ctlHdr, int packetLe
 
     LC_ASSERT(needsAsyncCallback(ctlHdr->type));
 
-    queuedCb = malloc(sizeof(*queuedCb));
+    if (ctlHdr->type == packetTypes[IDX_CLIPBOARD_TEXT] &&
+            (packetLength < (int)sizeof(*ctlHdr) ||
+             packetLength - sizeof(*ctlHdr) > MAX_CLIPBOARD_TEXT_SIZE)) {
+        Limelog("Discarding invalid clipboard message length: %d\n", packetLength);
+        return;
+    }
+
+    queuedCb = malloc(sizeof(*queuedCb) +
+                      (ctlHdr->type == packetTypes[IDX_CLIPBOARD_TEXT] ?
+                       packetLength - sizeof(*ctlHdr) : 0));
     if (!queuedCb) {
         return;
     }
@@ -1275,6 +1301,11 @@ static void queueAsyncCallback(PNVCTL_ENET_PACKET_HEADER_V1 ctlHdr, int packetLe
         BbGetBytes(&bb, queuedCb->data.dsAdaptiveTrigger.left, DS_EFFECT_PAYLOAD_SIZE);
         BbGetBytes(&bb, queuedCb->data.dsAdaptiveTrigger.right, DS_EFFECT_PAYLOAD_SIZE);
         queuedCb->typeIndex = IDX_DS_ADAPTIVE_TRIGGERS;
+    }
+    else if (ctlHdr->type == packetTypes[IDX_CLIPBOARD_TEXT]) {
+        queuedCb->data.clipboard.length = packetLength - sizeof(*ctlHdr);
+        BbGetBytes(&bb, (uint8_t*)queuedCb->data.clipboard.text, queuedCb->data.clipboard.length);
+        queuedCb->typeIndex = IDX_CLIPBOARD_TEXT;
     }
     else {
         // Unhandled packet type from needsAsyncCallback()
