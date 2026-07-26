@@ -732,6 +732,20 @@ int LiSendKeyboardEvent2(short keyCode, char keyAction, char modifiers, char fla
 // This function queues an UTF-8 encoded text to be sent to the remote server.
 int LiSendUtf8TextEvent(const char *text, unsigned int length);
 
+// Requests that Sunshine select a keyboard layout before processing subsequent
+// physical keyboard events. The BCP-47 language enables cross-platform matching,
+// while layoutId identifies the exact layout when client and host platforms match.
+// It returns LI_ERR_UNSUPPORTED when the host does not advertise support.
+#define LI_KEYBOARD_LAYOUT_PLATFORM_UNKNOWN 0
+#define LI_KEYBOARD_LAYOUT_PLATFORM_WINDOWS 1
+#define LI_KEYBOARD_LAYOUT_PLATFORM_MACOS   2
+#define LI_KEYBOARD_LAYOUT_PLATFORM_XKB     3
+#define LI_KEYBOARD_LAYOUT_LANGUAGE_MAX_COUNT 63
+#define LI_KEYBOARD_LAYOUT_ID_MAX_COUNT       255
+int LiSendKeyboardLayoutEvent(unsigned char platform,
+                              const char *language, unsigned int languageLength,
+                              const char *layoutId, unsigned int layoutIdLength);
+
 // This function updates the Sunshine host's clipboard with up to 60 KiB of UTF-8 text.
 // It returns LI_ERR_UNSUPPORTED when the host does not advertise support.
 int LiSendClipboardTextEvent(const char *text, unsigned int length);
@@ -1061,6 +1075,7 @@ void LiRequestIdrFrame(void);
 #define LI_FF_CLIPBOARD_SYNC          0x04 // Bidirectional UTF-8 clipboard sync supported
 #define LI_FF_ADAPTIVE_BITRATE        0x08 // Live bitrate and resolution changes supported
 #define LI_FF_LIVE_DISPLAY_SWITCH     0x10 // Live host display enumeration and switching supported
+#define LI_FF_KEYBOARD_LAYOUT_SYNC    0x20 // Host keyboard layout synchronization supported
 uint32_t LiGetHostFeatureFlags(void);
 
 #ifdef __cplusplus

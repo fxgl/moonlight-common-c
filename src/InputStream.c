@@ -77,6 +77,7 @@ typedef struct _PACKET_HOLDER {
         SS_CONTROLLER_MOTION_PACKET controllerMotion;
         SS_CONTROLLER_BATTERY_PACKET controllerBattery;
         SS_CLIPBOARD_FOCUS_PACKET clipboardFocus;
+        SS_KEYBOARD_LAYOUT_PACKET keyboardLayout;
         NV_UNICODE_PACKET unicode;
     } packet;
 } PACKET_HOLDER, *PPACKET_HOLDER;
@@ -1062,6 +1063,59 @@ int LiSendUtf8TextEvent(const char *text, unsigned int length) {
     holder->packet.unicode.header.size = BE32(sizeof(uint32_t) + length);
     holder->packet.unicode.header.magic = LE32(UTF8_TEXT_EVENT_MAGIC);
     memcpy(holder->packet.unicode.text, text, length);
+
+    err = LbqOfferQueueItem(&packetQueue, holder, &holder->entry);
+    if (err != LBQ_SUCCESS) {
+        LC_ASSERT(err == LBQ_BOUND_EXCEEDED);
+        Limelog("Input queue reached maximum size limit\n");
+        freePacketHolder(holder);
+    }
+
+    return err;
+}
+
+int LiSendKeyboardLayoutEvent(unsigned char platform,
+                              const char *language, unsigned int languageLength,
+                              const char *layoutId, unsigned int layoutIdLength) {
+    PPACKET_HOLDER holder;
+    int err;
+    unsigned int payloadLength;
+
+    if (!(SunshineFeatureFlags & LI_FF_KEYBOARD_LAYOUT_SYNC)) {
+        return LI_ERR_UNSUPPORTED;
+    }
+    if (!initialized) {
+        return -2;
+    }
+    if (language == NULL || languageLength == 0 ||
+            languageLength > SS_KEYBOARD_LAYOUT_LANGUAGE_MAX_COUNT ||
+            layoutIdLength > SS_KEYBOARD_LAYOUT_ID_MAX_COUNT ||
+            (layoutIdLength != 0 && layoutId == NULL)) {
+        return -1;
+    }
+
+    payloadLength = sizeof(holder->packet.keyboardLayout.platform) +
+                    sizeof(holder->packet.keyboardLayout.languageLength) +
+                    sizeof(holder->packet.keyboardLayout.layoutIdLength) +
+                    languageLength + layoutIdLength;
+    holder = allocatePacketHolder(payloadLength);
+    if (holder == NULL) {
+        return -1;
+    }
+
+    // Use the keyboard channel so the layout change is ordered before the
+    // physical key event that caused the client to detect it.
+    holder->channelId = CTRL_CHANNEL_KEYBOARD;
+    holder->enetPacketFlags = ENET_PACKET_FLAG_RELIABLE;
+    holder->packet.keyboardLayout.header.size = BE32(sizeof(uint32_t) + payloadLength);
+    holder->packet.keyboardLayout.header.magic = LE32(SS_KEYBOARD_LAYOUT_EVENT_MAGIC);
+    holder->packet.keyboardLayout.platform = platform;
+    holder->packet.keyboardLayout.languageLength = (uint8_t)languageLength;
+    holder->packet.keyboardLayout.layoutIdLength = LE16((uint16_t)layoutIdLength);
+    memcpy(holder->packet.keyboardLayout.data, language, languageLength);
+    if (layoutIdLength != 0) {
+        memcpy(&holder->packet.keyboardLayout.data[languageLength], layoutId, layoutIdLength);
+    }
 
     err = LbqOfferQueueItem(&packetQueue, holder, &holder->entry);
     if (err != LBQ_SUCCESS) {

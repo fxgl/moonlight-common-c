@@ -288,6 +288,7 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
             moonlightFeatureFlags |= ML_FF_ADAPTIVE_BITRATE;
         }
         moonlightFeatureFlags |= ML_FF_LIVE_DISPLAY_SWITCH;
+        moonlightFeatureFlags |= ML_FF_KEYBOARD_LAYOUT_SYNC;
         snprintf(payloadStr, sizeof(payloadStr), "%" PRIu32, moonlightFeatureFlags);
         err |= addAttributeString(&optionHead, "x-ml-general.featureFlags", payloadStr);
 
