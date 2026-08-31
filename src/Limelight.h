@@ -777,6 +777,11 @@ int LiRequestHostDisplaySwitch(unsigned short displayIndex);
 // a Sunshine protocol extension and returns LI_ERR_UNSUPPORTED when unavailable.
 int LiRequestHostActiveWindowDisplay(void);
 
+// Pauses or resumes video transmission without ending the streaming session.
+// Audio, input, and control channels remain active. This is a Sunshine protocol
+// extension and returns LI_ERR_UNSUPPORTED when unavailable.
+int LiRequestVideoPause(bool paused);
+
 // Button flags
 #define A_FLAG     0x1000
 #define B_FLAG     0x2000
@@ -1081,6 +1086,7 @@ void LiRequestIdrFrame(void);
 #define LI_FF_LIVE_DISPLAY_SWITCH     0x10 // Live host display enumeration and switching supported
 #define LI_FF_KEYBOARD_LAYOUT_SYNC    0x20 // Host keyboard layout synchronization supported
 #define LI_FF_ACTIVE_WINDOW_DISPLAY   0x40 // Host can locate the display containing its active window
+#define LI_FF_VIDEO_PAUSE             0x80 // Video transmission can be paused without ending the session
 uint32_t LiGetHostFeatureFlags(void);
 
 #ifdef __cplusplus

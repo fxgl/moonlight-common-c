@@ -636,6 +636,22 @@ int LiRequestHostActiveWindowDisplay(void) {
                                 false) ? 0 : -1;
 }
 
+int LiRequestVideoPause(bool paused) {
+    uint8_t pauseState;
+
+    if (!(SunshineFeatureFlags & LI_FF_VIDEO_PAUSE)) {
+        return LI_ERR_UNSUPPORTED;
+    }
+
+    pauseState = paused ? 1 : 0;
+    return sendMessageAndForget(SS_VIDEO_PAUSE_PTYPE,
+                                sizeof(pauseState),
+                                &pauseState,
+                                CTRL_CHANNEL_GENERIC,
+                                ENET_PACKET_FLAG_RELIABLE,
+                                false) ? 0 : -1;
+}
+
 // Reads an NV control stream packet from the TCP connection
 static PNVCTL_TCP_PACKET_HEADER readNvctlPacketTcp(void) {
     NVCTL_TCP_PACKET_HEADER staticHeader;

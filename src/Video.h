@@ -74,6 +74,7 @@ typedef struct _SS_FRAME_FEC_STATUS {
 #define SS_HOST_DISPLAY_LIST_PTYPE 0x5506
 #define SS_HOST_DISPLAY_SWITCH_PTYPE 0x5507
 #define SS_HOST_ACTIVE_WINDOW_DISPLAY_PTYPE 0x5508
+#define SS_VIDEO_PAUSE_PTYPE 0x5509
 typedef struct _SS_ADAPTIVE_STREAM_CONFIG {
     uint32_t bitrateKbps;
     uint16_t width;
