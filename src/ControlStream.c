@@ -623,6 +623,19 @@ int LiRequestHostDisplaySwitch(unsigned short displayIndex) {
                                 false) ? 0 : -1;
 }
 
+int LiRequestHostActiveWindowDisplay(void) {
+    if (!(SunshineFeatureFlags & LI_FF_ACTIVE_WINDOW_DISPLAY)) {
+        return LI_ERR_UNSUPPORTED;
+    }
+
+    return sendMessageAndForget(SS_HOST_ACTIVE_WINDOW_DISPLAY_PTYPE,
+                                0,
+                                NULL,
+                                CTRL_CHANNEL_GENERIC,
+                                ENET_PACKET_FLAG_RELIABLE,
+                                false) ? 0 : -1;
+}
+
 // Reads an NV control stream packet from the TCP connection
 static PNVCTL_TCP_PACKET_HEADER readNvctlPacketTcp(void) {
     NVCTL_TCP_PACKET_HEADER staticHeader;

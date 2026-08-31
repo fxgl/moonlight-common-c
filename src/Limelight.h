@@ -773,6 +773,10 @@ int LiRequestAdaptiveStreamConfig(int width, int height, int bitrateKbps);
 int LiRequestHostDisplayList(void);
 int LiRequestHostDisplaySwitch(unsigned short displayIndex);
 
+// Switches capture to the display containing the host's active window. This is
+// a Sunshine protocol extension and returns LI_ERR_UNSUPPORTED when unavailable.
+int LiRequestHostActiveWindowDisplay(void);
+
 // Button flags
 #define A_FLAG     0x1000
 #define B_FLAG     0x2000
@@ -1076,6 +1080,7 @@ void LiRequestIdrFrame(void);
 #define LI_FF_ADAPTIVE_BITRATE        0x08 // Live bitrate and resolution changes supported
 #define LI_FF_LIVE_DISPLAY_SWITCH     0x10 // Live host display enumeration and switching supported
 #define LI_FF_KEYBOARD_LAYOUT_SYNC    0x20 // Host keyboard layout synchronization supported
+#define LI_FF_ACTIVE_WINDOW_DISPLAY   0x40 // Host can locate the display containing its active window
 uint32_t LiGetHostFeatureFlags(void);
 
 #ifdef __cplusplus

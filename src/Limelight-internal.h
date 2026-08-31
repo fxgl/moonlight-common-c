@@ -94,6 +94,7 @@ extern bool AdaptiveBitrateEnabled;
 #define ML_FF_ADAPTIVE_BITRATE 0x08 // Client can request live bitrate/resolution changes
 #define ML_FF_LIVE_DISPLAY_SWITCH 0x10 // Client supports live host display enumeration and switching
 #define ML_FF_KEYBOARD_LAYOUT_SYNC 0x20 // Client can synchronize the host keyboard layout
+#define ML_FF_ACTIVE_WINDOW_DISPLAY 0x40 // Client can request the display containing the host's active window
 
 #define UDP_RECV_POLL_TIMEOUT_MS 100
 
