@@ -497,6 +497,12 @@ typedef void(*ConnListenerSetClipboardText)(const char* text, unsigned int lengt
 // by little-endian length-prefixed UTF-8 display names.
 typedef void(*ConnListenerSetHostDisplayList)(const char* payload, unsigned int length);
 
+// This callback is invoked for each chunk of a PNG clipboard image published by a
+// Sunshine host. Chunks of a transfer arrive in order; offset 0 starts a new
+// transfer. The data pointer is valid only for the duration of the callback.
+typedef void(*ConnListenerSetClipboardImageChunk)(uint32_t transferId, uint32_t totalLength,
+                                                  uint32_t offset, const char* data, unsigned int length);
+
 typedef struct _CONNECTION_LISTENER_CALLBACKS {
     ConnListenerStageStarting stageStarting;
     ConnListenerStageComplete stageComplete;
@@ -513,6 +519,7 @@ typedef struct _CONNECTION_LISTENER_CALLBACKS {
     ConnListenerSetAdaptiveTriggers setAdaptiveTriggers;
     ConnListenerSetClipboardText setClipboardText;
     ConnListenerSetHostDisplayList setHostDisplayList;
+    ConnListenerSetClipboardImageChunk setClipboardImageChunk;
 } CONNECTION_LISTENER_CALLBACKS, *PCONNECTION_LISTENER_CALLBACKS;
 
 // Use this function to zero the connection callbacks when allocated on the stack or heap
@@ -758,6 +765,19 @@ int LiSendClipboardFocusEvent(bool focused);
 // Enables or disables advertising clipboard synchronization to Sunshine for the next connection.
 // Clipboard synchronization is disabled by default.
 void LiSetClipboardSyncEnabled(bool enabled);
+
+// Largest PNG accepted by LiSendClipboardImage() and delivered to setClipboardImageChunk.
+#define LI_CLIPBOARD_IMAGE_MAX_SIZE (16 * 1024 * 1024)
+
+// Copies a PNG image and sends it to the Sunshine host clipboard in the background,
+// pacing chunks so input is not queued behind image data. A newer image replaces
+// one still being sent. Returns LI_ERR_UNSUPPORTED unless image sync was enabled
+// and the host advertises LI_FF_CLIPBOARD_IMAGE_SYNC.
+int LiSendClipboardImage(const char* png, unsigned int length);
+
+// Enables or disables advertising clipboard image synchronization for the next connection.
+// Requires clipboard synchronization to be enabled as well. Disabled by default.
+void LiSetClipboardImageSyncEnabled(bool enabled);
 
 // Enables or disables adaptive bitrate and resolution requests for the next connection.
 // When enabled, StreamConfig.bitrate, width, and height are treated as upper limits.
@@ -1087,6 +1107,7 @@ void LiRequestIdrFrame(void);
 #define LI_FF_KEYBOARD_LAYOUT_SYNC    0x20 // Host keyboard layout synchronization supported
 #define LI_FF_ACTIVE_WINDOW_DISPLAY   0x40 // Host can locate the display containing its active window
 #define LI_FF_VIDEO_PAUSE             0x80 // Video transmission can be paused without ending the session
+#define LI_FF_CLIPBOARD_IMAGE_SYNC    0x100 // PNG clipboard image sync supported
 uint32_t LiGetHostFeatureFlags(void);
 
 #ifdef __cplusplus

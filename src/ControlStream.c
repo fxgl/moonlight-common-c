@@ -102,6 +102,13 @@ typedef struct _QUEUED_ASYNC_CALLBACK {
             unsigned int length;
             char payload[1];
         } displayList;
+        struct {
+            uint32_t transferId;
+            uint32_t totalLength;
+            uint32_t offset;
+            unsigned int length;
+            char data[1];
+        } clipboardImageChunk;
     } data;
     LINKED_BLOCKING_QUEUE_ENTRY entry;
 } QUEUED_ASYNC_CALLBACK, *PQUEUED_ASYNC_CALLBACK;
@@ -164,6 +171,7 @@ static PPLT_CRYPTO_CONTEXT decryptionCtx;
 #define IDX_DS_ADAPTIVE_TRIGGERS 12
 #define IDX_CLIPBOARD_TEXT 13
 #define IDX_HOST_DISPLAY_LIST 14
+#define IDX_CLIPBOARD_IMAGE_CHUNK 15
 
 #define MAX_CLIPBOARD_TEXT_SIZE (60 * 1024)
 #define MAX_HOST_DISPLAY_LIST_SIZE (16 * 1024)
@@ -187,6 +195,7 @@ static const short packetTypesGen3[] = {
     -1,     // Set Adaptive Triggers (unused)
     -1,     // Clipboard text (unused)
     -1,     // Host display list (unused)
+    -1,     // Clipboard image chunk (unused)
 };
 static const short packetTypesGen4[] = {
     0x0606, // Request IDR frame
@@ -204,6 +213,7 @@ static const short packetTypesGen4[] = {
     -1,     // Set Adaptive Triggers (unused)
     -1,     // Clipboard text (unused)
     -1,     // Host display list (unused)
+    -1,     // Clipboard image chunk (unused)
 };
 static const short packetTypesGen5[] = {
     0x0305, // Start A
@@ -221,6 +231,7 @@ static const short packetTypesGen5[] = {
     -1,     // Set Adaptive Triggers (unused)
     -1,     // Clipboard text (unused)
     -1,     // Host display list (unused)
+    -1,     // Clipboard image chunk (unused)
 };
 static const short packetTypesGen7[] = {
     0x0305, // Start A
@@ -238,6 +249,7 @@ static const short packetTypesGen7[] = {
     -1,     // Set Adaptive Triggers (unused)
     -1,     // Clipboard text (unused)
     -1,     // Host display list (unused)
+    -1,     // Clipboard image chunk (unused)
 };
 static const short packetTypesGen7Enc[] = {
     0x0302, // Request IDR frame
@@ -255,6 +267,7 @@ static const short packetTypesGen7Enc[] = {
     0x5503, // Set Adaptive Triggers (Sunshine protocol extension)
     0x5504, // Clipboard text (Sunshine protocol extension)
     0x5506, // Host display list (Sunshine protocol extension)
+    SS_CLIPBOARD_IMAGE_CHUNK_PTYPE, // Clipboard image chunk (Sunshine protocol extension)
 };
 
 static const char requestIdrFrameGen3[] = { 0, 0 };
@@ -347,7 +360,7 @@ int initializeControlStream(void) {
     PltCreateEvent(&idrFrameRequiredEvent);
     LbqInitializeLinkedBlockingQueue(&referenceFrameControlQueue, 20);
     LbqInitializeLinkedBlockingQueue(&frameFecStatusQueue, 8); // Limits number of frame status reports per periodic ping interval
-    LbqInitializeLinkedBlockingQueue(&asyncCallbackQueue, 30);
+    LbqInitializeLinkedBlockingQueue(&asyncCallbackQueue, 64);
     PltCreateMutex(&enetMutex);
     PltCreateMutex(&hdrMutex);
 
@@ -1314,6 +1327,13 @@ static void asyncCallbackThreadFunc(void* context) {
             ListenerCallbacks.setHostDisplayList(queuedCb->data.displayList.payload,
                                                  queuedCb->data.displayList.length);
             break;
+        case IDX_CLIPBOARD_IMAGE_CHUNK:
+            ListenerCallbacks.setClipboardImageChunk(queuedCb->data.clipboardImageChunk.transferId,
+                                                     queuedCb->data.clipboardImageChunk.totalLength,
+                                                     queuedCb->data.clipboardImageChunk.offset,
+                                                     queuedCb->data.clipboardImageChunk.data,
+                                                     queuedCb->data.clipboardImageChunk.length);
+            break;
         default:
             // Unhandled packet type from queueAsyncCallback()
             LC_ASSERT(false);
@@ -1332,7 +1352,8 @@ static bool needsAsyncCallback(unsigned short packetType) {
            packetType == packetTypes[IDX_HDR_INFO] ||
            packetType == packetTypes[IDX_DS_ADAPTIVE_TRIGGERS] ||
            packetType == packetTypes[IDX_CLIPBOARD_TEXT] ||
-           packetType == packetTypes[IDX_HOST_DISPLAY_LIST];
+           packetType == packetTypes[IDX_HOST_DISPLAY_LIST] ||
+           packetType == packetTypes[IDX_CLIPBOARD_IMAGE_CHUNK];
 }
 
 static void queueAsyncCallback(PNVCTL_ENET_PACKET_HEADER_V1 ctlHdr, int packetLength) {
@@ -1352,6 +1373,47 @@ static void queueAsyncCallback(PNVCTL_ENET_PACKET_HEADER_V1 ctlHdr, int packetLe
             (packetLength < (int)sizeof(*ctlHdr) ||
              packetLength - sizeof(*ctlHdr) > MAX_HOST_DISPLAY_LIST_SIZE)) {
         Limelog("Discarding invalid host display list length: %d\n", packetLength);
+        return;
+    }
+    if (ctlHdr->type == packetTypes[IDX_CLIPBOARD_IMAGE_CHUNK]) {
+        SS_CLIPBOARD_IMAGE_CHUNK_HEADER chunkHdr;
+        uint32_t dataLength, totalLength, offset;
+
+        if (packetLength < (int)(sizeof(*ctlHdr) + sizeof(chunkHdr)) ||
+                packetLength - sizeof(*ctlHdr) - sizeof(chunkHdr) > SS_CLIPBOARD_IMAGE_CHUNK_MAX_DATA) {
+            Limelog("Discarding invalid clipboard image chunk length: %d\n", packetLength);
+            return;
+        }
+
+        memcpy(&chunkHdr, &ctlHdr[1], sizeof(chunkHdr));
+        dataLength = (uint32_t)(packetLength - sizeof(*ctlHdr) - sizeof(chunkHdr));
+        totalLength = LE32(chunkHdr.totalLength);
+        offset = LE32(chunkHdr.offset);
+        if (chunkHdr.format != SS_CLIPBOARD_IMAGE_FORMAT_PNG || dataLength == 0 ||
+                totalLength > LI_CLIPBOARD_IMAGE_MAX_SIZE || offset > totalLength ||
+                dataLength > totalLength - offset) {
+            Limelog("Discarding invalid clipboard image chunk (format %u, offset %u, length %u, total %u)\n",
+                    chunkHdr.format, offset, dataLength, totalLength);
+            return;
+        }
+
+        queuedCb = malloc(sizeof(*queuedCb) + dataLength);
+        if (!queuedCb) {
+            return;
+        }
+
+        queuedCb->typeIndex = IDX_CLIPBOARD_IMAGE_CHUNK;
+        queuedCb->data.clipboardImageChunk.transferId = LE32(chunkHdr.transferId);
+        queuedCb->data.clipboardImageChunk.totalLength = totalLength;
+        queuedCb->data.clipboardImageChunk.offset = offset;
+        queuedCb->data.clipboardImageChunk.length = dataLength;
+        memcpy(queuedCb->data.clipboardImageChunk.data, (char*)&ctlHdr[1] + sizeof(chunkHdr), dataLength);
+
+        err = LbqOfferQueueItem(&asyncCallbackQueue, queuedCb, &queuedCb->entry);
+        if (err != LBQ_SUCCESS) {
+            Limelog("Failed to queue clipboard image chunk: %d\n", err);
+            free(queuedCb);
+        }
         return;
     }
 
@@ -2079,6 +2141,24 @@ bool isControlDataInTransit(void) {
     if (peer != NULL && peer->state == ENET_PEER_STATE_CONNECTED) {
         if (peer->reliableDataInTransit != 0) {
             ret = true;
+        }
+    }
+    PltUnlockMutex(&enetMutex);
+
+    return ret;
+}
+
+// Flushes queued control data and returns true while ENet still has commands it
+// could not transmit yet (e.g. due to the reliable window). Bulk senders wait for
+// this to clear so latency-sensitive input isn't queued behind their data.
+bool isControlSendQueuePending(void) {
+    bool ret = false;
+
+    PltLockMutex(&enetMutex);
+    if (peer != NULL && peer->state == ENET_PEER_STATE_CONNECTED) {
+        if (!enet_list_empty(&peer->outgoingCommands) || !enet_list_empty(&peer->outgoingSendReliableCommands)) {
+            enet_host_flush(client);
+            ret = !enet_list_empty(&peer->outgoingCommands) || !enet_list_empty(&peer->outgoingSendReliableCommands);
         }
     }
     PltUnlockMutex(&enetMutex);

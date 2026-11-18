@@ -12,6 +12,15 @@ static LINKED_BLOCKING_QUEUE packetQueue;
 static LINKED_BLOCKING_QUEUE packetHolderFreeList;
 static PLT_THREAD inputSendThread;
 
+// Clipboard images are sent by a dedicated thread so the input queue never holds
+// bulk data. Only the newest image is kept; it replaces one still being sent.
+static PLT_THREAD clipboardSendThread;
+static PLT_MUTEX clipboardSendMutex;
+static PLT_EVENT clipboardSendEvent;
+static char* pendingClipboardImage;
+static uint32_t pendingClipboardImageLength;
+static uint32_t clipboardImageTransferId;
+
 static float absCurrentPosX;
 static float absCurrentPosY;
 
@@ -123,6 +132,10 @@ int initializeInputStream(void) {
     currentQueuedAbsoluteMousePacket = NULL;
     memset(currentGamepadSensorState, 0, sizeof(currentGamepadSensorState));
     PltCreateMutex(&batchedInputMutex);
+    PltCreateMutex(&clipboardSendMutex);
+    PltCreateEvent(&clipboardSendEvent);
+    pendingClipboardImage = NULL;
+    pendingClipboardImageLength = 0;
 
     return 0;
 }
@@ -159,6 +172,10 @@ void destroyInputStream(void) {
     currentQueuedRelativeMousePacket = NULL;
     currentQueuedAbsoluteMousePacket = NULL;
     PltDeleteMutex(&batchedInputMutex);
+    free(pendingClipboardImage);
+    pendingClipboardImage = NULL;
+    PltDeleteMutex(&clipboardSendMutex);
+    PltCloseEvent(&clipboardSendEvent);
 }
 
 static int encryptData(unsigned char* plaintext, int plaintextLen,
@@ -688,6 +705,78 @@ static int sendEnableHaptics(void) {
     return err;
 }
 
+// Sends one clipboard image as chunked input packets. Each chunk is queued only
+// after ENet has transmitted the previous one, so input packets wait behind at
+// most one chunk. Abandons the transfer when a newer image is pending.
+static void sendClipboardImageChunks(const char* data, uint32_t length, uint32_t transferId) {
+    char packet[sizeof(NV_INPUT_HEADER) + sizeof(SS_CLIPBOARD_IMAGE_CHUNK_HEADER) + SS_CLIPBOARD_IMAGE_CHUNK_MAX_DATA];
+    PNV_INPUT_HEADER inputHeader = (PNV_INPUT_HEADER)packet;
+    PSS_CLIPBOARD_IMAGE_CHUNK_HEADER chunkHeader = (PSS_CLIPBOARD_IMAGE_CHUNK_HEADER)&inputHeader[1];
+    uint32_t offset = 0;
+
+    memset(chunkHeader, 0, sizeof(*chunkHeader));
+    inputHeader->magic = LE32(SS_CLIPBOARD_IMAGE_CHUNK_EVENT_MAGIC);
+    chunkHeader->transferId = LE32(transferId);
+    chunkHeader->totalLength = LE32(length);
+    chunkHeader->format = SS_CLIPBOARD_IMAGE_FORMAT_PNG;
+
+    while (offset < length) {
+        uint32_t chunkLength = length - offset;
+        bool superseded;
+
+        if (chunkLength > SS_CLIPBOARD_IMAGE_CHUNK_MAX_DATA) {
+            chunkLength = SS_CLIPBOARD_IMAGE_CHUNK_MAX_DATA;
+        }
+
+        while (!PltIsThreadInterrupted(&clipboardSendThread) && isControlSendQueuePending()) {
+            PltSleepMs(1);
+        }
+
+        PltLockMutex(&clipboardSendMutex);
+        superseded = pendingClipboardImage != NULL;
+        PltUnlockMutex(&clipboardSendMutex);
+        if (superseded || PltIsThreadInterrupted(&clipboardSendThread)) {
+            return;
+        }
+
+        inputHeader->size = BE32((uint32_t)(sizeof(inputHeader->magic) + sizeof(*chunkHeader) + chunkLength));
+        chunkHeader->offset = LE32(offset);
+        memcpy(&chunkHeader[1], &data[offset], chunkLength);
+
+        if (sendInputPacketOnControlStream((unsigned char*)packet,
+                                           (unsigned int)(sizeof(*inputHeader) + sizeof(*chunkHeader) + chunkLength),
+                                           CTRL_CHANNEL_CLIPBOARD, ENET_PACKET_FLAG_RELIABLE, false) < 0) {
+            Limelog("Failed to send clipboard image chunk at offset %u\n", offset);
+            return;
+        }
+
+        offset += chunkLength;
+    }
+}
+
+static void clipboardSendThreadProc(void* context) {
+    while (!PltIsThreadInterrupted(&clipboardSendThread)) {
+        char* data;
+        uint32_t length;
+        uint32_t transferId;
+
+        PltWaitForEvent(&clipboardSendEvent);
+        PltClearEvent(&clipboardSendEvent);
+
+        PltLockMutex(&clipboardSendMutex);
+        data = pendingClipboardImage;
+        length = pendingClipboardImageLength;
+        pendingClipboardImage = NULL;
+        transferId = ++clipboardImageTransferId;
+        PltUnlockMutex(&clipboardSendMutex);
+
+        if (data != NULL) {
+            sendClipboardImageChunks(data, length, transferId);
+            free(data);
+        }
+    }
+}
+
 // Begin the input stream
 int startInputStream(void) {
     int err;
@@ -705,6 +794,17 @@ int startInputStream(void) {
 
     err = PltCreateThread("InputSend", inputSendThreadProc, NULL, &inputSendThread);
     if (err != 0) {
+        if (inputSock != INVALID_SOCKET) {
+            closeSocket(inputSock);
+            inputSock = INVALID_SOCKET;
+        }
+        return err;
+    }
+
+    err = PltCreateThread("ClipboardSend", clipboardSendThreadProc, NULL, &clipboardSendThread);
+    if (err != 0) {
+        LbqSignalQueueDrain(&packetQueue);
+        PltJoinThread(&inputSendThread);
         if (inputSock != INVALID_SOCKET) {
             closeSocket(inputSock);
             inputSock = INVALID_SOCKET;
@@ -731,6 +831,10 @@ int stopInputStream(void) {
     // input packets before shutting down.
     LbqSignalQueueDrain(&packetQueue);
     PltJoinThread(&inputSendThread);
+
+    PltInterruptThread(&clipboardSendThread);
+    PltSetEvent(&clipboardSendEvent);
+    PltJoinThread(&clipboardSendThread);
 
     if (inputSock != INVALID_SOCKET) {
         shutdownTcpSocket(inputSock);
@@ -1192,6 +1296,36 @@ int LiSendClipboardFocusEvent(bool focused) {
     }
 
     return err;
+}
+
+int LiSendClipboardImage(const char* png, unsigned int length) {
+    char* copy;
+
+    if (!ClipboardSyncEnabled || !ClipboardImageSyncEnabled || !encryptedControlStream ||
+            !(SunshineFeatureFlags & LI_FF_CLIPBOARD_IMAGE_SYNC)) {
+        return LI_ERR_UNSUPPORTED;
+    }
+    if (!atomic_load_explicit(&initialized, memory_order_acquire)) {
+        return -2;
+    }
+    if (png == NULL || length == 0 || length > LI_CLIPBOARD_IMAGE_MAX_SIZE) {
+        return -1;
+    }
+
+    copy = malloc(length);
+    if (copy == NULL) {
+        return -1;
+    }
+    memcpy(copy, png, length);
+
+    PltLockMutex(&clipboardSendMutex);
+    free(pendingClipboardImage);
+    pendingClipboardImage = copy;
+    pendingClipboardImageLength = length;
+    PltUnlockMutex(&clipboardSendMutex);
+    PltSetEvent(&clipboardSendEvent);
+
+    return 0;
 }
 
 static int sendControllerEventInternal(uint8_t controllerNumber, uint16_t activeGamepadMask,

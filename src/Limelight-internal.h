@@ -54,6 +54,7 @@ extern uint32_t EncryptionFeaturesSupported;
 extern uint32_t EncryptionFeaturesRequested;
 extern uint32_t EncryptionFeaturesEnabled;
 extern bool ClipboardSyncEnabled;
+extern bool ClipboardImageSyncEnabled;
 extern bool AdaptiveBitrateEnabled;
 
 // ENet channel ID values
@@ -96,6 +97,7 @@ extern bool AdaptiveBitrateEnabled;
 #define ML_FF_KEYBOARD_LAYOUT_SYNC 0x20 // Client can synchronize the host keyboard layout
 #define ML_FF_ACTIVE_WINDOW_DISPLAY 0x40 // Client can request the display containing the host's active window
 #define ML_FF_VIDEO_PAUSE 0x80 // Client can pause host video transmission without ending the session
+#define ML_FF_CLIPBOARD_IMAGE_SYNC 0x100 // Client supports PNG clipboard image sync
 
 #define UDP_RECV_POLL_TIMEOUT_MS 100
 
@@ -134,6 +136,7 @@ void connectionSendFrameFecStatus(PSS_FRAME_FEC_STATUS fecStatus);
 int sendInputPacketOnControlStream(unsigned char* data, unsigned int length, uint8_t channelId, uint32_t flags, bool moreData);
 void flushInputOnControlStream(void);
 bool isControlDataInTransit(void);
+bool isControlSendQueuePending(void);
 
 int performRtspHandshake(PSERVER_INFORMATION serverInfo);
 

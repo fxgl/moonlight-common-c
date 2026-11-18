@@ -54,6 +54,21 @@ typedef struct _SS_KEYBOARD_LAYOUT_PACKET {
     char data[1]; // BCP-47 language followed by the platform-specific layout ID
 } SS_KEYBOARD_LAYOUT_PACKET, *PSS_KEYBOARD_LAYOUT_PACKET;
 
+// Clipboard images travel as chunks in both directions: client to host as input
+// packets with SS_CLIPBOARD_IMAGE_CHUNK_EVENT_MAGIC, host to client as control
+// messages with SS_CLIPBOARD_IMAGE_CHUNK_PTYPE. Chunks of one transfer arrive in
+// order; a chunk at offset 0 starts a new transfer and replaces any partial one.
+#define SS_CLIPBOARD_IMAGE_CHUNK_EVENT_MAGIC 0x5500000B
+#define SS_CLIPBOARD_IMAGE_CHUNK_MAX_DATA (16 * 1024)
+#define SS_CLIPBOARD_IMAGE_FORMAT_PNG 1
+typedef struct _SS_CLIPBOARD_IMAGE_CHUNK_HEADER {
+    uint32_t transferId; // Little Endian
+    uint32_t totalLength; // Little Endian
+    uint32_t offset; // Little Endian
+    uint8_t format;
+    uint8_t reserved[3];
+} SS_CLIPBOARD_IMAGE_CHUNK_HEADER, *PSS_CLIPBOARD_IMAGE_CHUNK_HEADER;
+
 #define MOUSE_MOVE_REL_MAGIC 0x00000006
 #define MOUSE_MOVE_REL_MAGIC_GEN5 0x00000007
 typedef struct _NV_REL_MOUSE_MOVE_PACKET {

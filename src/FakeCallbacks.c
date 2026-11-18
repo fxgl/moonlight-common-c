@@ -43,6 +43,8 @@ static void fakeClSetAdaptiveTriggers(uint16_t controllerNumber, uint8_t eventFl
 static void fakeClSetControllerLED(uint16_t controllerNumber, uint8_t r, uint8_t g, uint8_t b) {}
 static void fakeClSetClipboardText(const char* text, unsigned int length) {}
 static void fakeClSetHostDisplayList(const char* payload, unsigned int length) {}
+static void fakeClSetClipboardImageChunk(uint32_t transferId, uint32_t totalLength, uint32_t offset,
+                                         const char* data, unsigned int length) {}
 
 static CONNECTION_LISTENER_CALLBACKS fakeClCallbacks = {
     .stageStarting = fakeClStageStarting,
@@ -60,6 +62,7 @@ static CONNECTION_LISTENER_CALLBACKS fakeClCallbacks = {
     .setAdaptiveTriggers = fakeClSetAdaptiveTriggers,
     .setClipboardText = fakeClSetClipboardText,
     .setHostDisplayList = fakeClSetHostDisplayList,
+    .setClipboardImageChunk = fakeClSetClipboardImageChunk,
 };
 
 void fixupMissingCallbacks(PDECODER_RENDERER_CALLBACKS* drCallbacks, PAUDIO_RENDERER_CALLBACKS* arCallbacks,
@@ -152,6 +155,12 @@ void fixupMissingCallbacks(PDECODER_RENDERER_CALLBACKS* drCallbacks, PAUDIO_REND
         }
         if ((*clCallbacks)->setClipboardText == NULL) {
             (*clCallbacks)->setClipboardText = fakeClSetClipboardText;
+        }
+        if ((*clCallbacks)->setHostDisplayList == NULL) {
+            (*clCallbacks)->setHostDisplayList = fakeClSetHostDisplayList;
+        }
+        if ((*clCallbacks)->setClipboardImageChunk == NULL) {
+            (*clCallbacks)->setClipboardImageChunk = fakeClSetClipboardImageChunk;
         }
     }
 }

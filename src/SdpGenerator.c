@@ -2,10 +2,15 @@
 #include <inttypes.h>
 
 bool ClipboardSyncEnabled;
+bool ClipboardImageSyncEnabled;
 bool AdaptiveBitrateEnabled;
 
 void LiSetClipboardSyncEnabled(bool enabled) {
     ClipboardSyncEnabled = enabled;
+}
+
+void LiSetClipboardImageSyncEnabled(bool enabled) {
+    ClipboardImageSyncEnabled = enabled;
 }
 
 void LiSetAdaptiveBitrateEnabled(bool enabled) {
@@ -283,6 +288,9 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
         uint32_t moonlightFeatureFlags = ML_FF_FEC_STATUS | ML_FF_SESSION_ID_V1;
         if (ClipboardSyncEnabled) {
             moonlightFeatureFlags |= ML_FF_CLIPBOARD_SYNC;
+            if (ClipboardImageSyncEnabled) {
+                moonlightFeatureFlags |= ML_FF_CLIPBOARD_IMAGE_SYNC;
+            }
         }
         if (AdaptiveBitrateEnabled) {
             moonlightFeatureFlags |= ML_FF_ADAPTIVE_BITRATE;
